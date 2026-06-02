@@ -1,3 +1,57 @@
+
+-- ============================================================
+-- 01_zonas.sql
+-- ============================================================
+
+-- Exercício 2.1 — Zonas
+-- Estratégia escolhida:
+--   especialidade do zoo = continente 'África'.
+--   Por isso existem várias zonas com continente='África' e categorias diferentes,
+--   mas NÃO existe nenhuma zona com continente='África' e categoria NULL.
+
+-- Este TRUNCATE torna o preenchimento reexecutável durante testes.
+-- Deve ser executado depois da criação do esquema e das RIs.
+TRUNCATE TABLE acesso, bilhete, venda, animal, especie, recinto, zona
+RESTART IDENTITY CASCADE;
+
+INSERT INTO zona (categoria, continente, preco) VALUES
+    -- zonas da especialidade: partilham o continente África
+    ('Aves',       'África', 18.00),
+    ('Carnívoros', 'África', 25.00),
+    ('Herbívoros', 'África', 20.00),
+
+    -- zonas exclusivamente por categoria
+    ('Primatas',            NULL, 22.00),
+    ('Repteis',             NULL, 16.00),
+    ('Mamíferos Marinhos',  NULL, 30.00),
+
+    -- zonas exclusivamente por continente, sem usar África
+    (NULL, 'Europa',    12.00),
+    (NULL, 'Asia',      14.00),
+    (NULL, 'América',   15.00),
+    (NULL, 'Austrália', 17.00);
+
+
+-- ============================================================
+-- 02_recintos.sql
+-- ============================================================
+
+-- Exercício 2.2 — Recintos
+-- Cada zona fica com 12 recintos.
+-- Isto satisfaz o intervalo exigido: entre 10 e 30 recintos por zona.
+-- Os votos são inicializados a 0 e atualizados após a criação dos bilhetes.
+
+INSERT INTO recinto (id_zona, votos)
+SELECT z.id_zona, 0
+FROM zona z
+CROSS JOIN generate_series(1, 12) AS g(n)
+ORDER BY z.id_zona, g.n;
+
+
+-- ============================================================
+-- 03_especies.sql
+-- ============================================================
+
 -- Exercício 2.3 — Espécies
 -- Lista com 216 espécies reais, cobrindo todas as categorias e todos os continentes.
 -- Os nomes científicos respeitam o CHECK do esquema: 'Genus species'.
@@ -219,3 +273,285 @@ INSERT INTO especie (nome_cientifico, nome_comum, categoria, continente) VALUES
     ('Zamenis longissimus', 'cobra-de-esculápio', 'Repteis', 'Europa'),
     ('Emys orbicularis', 'cágado-europeu', 'Repteis', 'Europa'),
     ('Podarcis muralis', 'lagartixa-dos-muros', 'Repteis', 'Europa');
+
+
+-- ============================================================
+-- 04_animais.sql
+-- ============================================================
+
+-- Exercício 2.4 — Animais
+-- Estratégia:
+--   1) cada espécie é colocada numa zona compatível, preferindo zona exacta
+--      (categoria+continente), depois zona de categoria, depois zona de continente;
+--   2) todos os animais da mesma espécie ficam numa única zona, satisfazendo RI-3;
+--   3) cada espécie tem 1, 2 ou 3 animais, logo a média fica entre 2 e 3;
+--   4) reserva-se o primeiro recinto de cada zona para uma espécie com 1 animal,
+--      garantindo recintos com apenas um animal;
+--   5) as restantes espécies são distribuídas pelos outros recintos da zona,
+--      criando recintos com vários animais da mesma espécie e recintos com várias espécies.
+
+WITH zona_ordenada AS (
+    SELECT
+        r.id_recinto,
+        r.id_zona,
+        ROW_NUMBER() OVER (
+            PARTITION BY r.id_zona
+            ORDER BY r.id_recinto
+        ) AS pos_recinto
+    FROM recinto r
+),
+especie_com_zona AS (
+    SELECT
+        e.nome_cientifico,
+        e.categoria,
+        e.continente,
+        COALESCE(
+            (
+                SELECT z.id_zona
+                FROM zona z
+                WHERE z.categoria = e.categoria
+                  AND z.continente = e.continente
+                LIMIT 1
+            ),
+            (
+                SELECT z.id_zona
+                FROM zona z
+                WHERE z.categoria = e.categoria
+                  AND z.continente IS NULL
+                LIMIT 1
+            ),
+            (
+                SELECT z.id_zona
+                FROM zona z
+                WHERE z.categoria IS NULL
+                  AND z.continente = e.continente
+                LIMIT 1
+            )
+        ) AS id_zona
+    FROM especie e
+),
+especie_planeada AS (
+    SELECT
+        ez.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY ez.id_zona
+            ORDER BY ez.nome_cientifico
+        ) AS pos_especie_na_zona
+    FROM especie_com_zona ez
+),
+especie_com_recinto AS (
+    SELECT
+        ep.nome_cientifico,
+        zr.id_recinto,
+        CASE
+            WHEN ep.pos_especie_na_zona = 1 THEN 1
+            WHEN ep.pos_especie_na_zona % 10 = 0 THEN 3
+            ELSE 2
+        END AS n_animais
+    FROM especie_planeada ep
+    JOIN zona_ordenada zr
+      ON zr.id_zona = ep.id_zona
+     AND zr.pos_recinto =
+         CASE
+             WHEN ep.pos_especie_na_zona = 1 THEN 1
+             ELSE 2 + ((ep.pos_especie_na_zona - 2) % 11)
+         END
+)
+INSERT INTO animal (nome, nome_cientifico, id_recinto, data_nasc)
+SELECT
+    'Animal ' || g.n AS nome,
+    er.nome_cientifico,
+    er.id_recinto,
+    DATE '2015-01-01'
+        + ((ROW_NUMBER() OVER (ORDER BY er.nome_cientifico, g.n))::INTEGER % 3500)
+FROM especie_com_recinto er
+CROSS JOIN LATERAL generate_series(1, er.n_animais) AS g(n)
+ORDER BY er.nome_cientifico, g.n;
+
+
+-- ============================================================
+-- 05_vendas_bilhetes_acessos.sql
+-- ============================================================
+
+-- Exercício 2.5 — Vendas, bilhetes, acessos e votos
+-- Este bloco usa uma única transação porque a RI-4 exige que venda,
+-- bilhete e acesso formem uma unidade lógica completa.
+-- A aula de transações justifica este padrão: várias instruções SQL
+-- que representam uma operação lógica devem ser envolvidas por BEGIN/COMMIT.
+
+BEGIN;
+
+-- Plano determinístico de bilhetes:
+--   dias úteis: 1000 bilhetes;
+--   fins de semana: 4000 bilhetes;
+--   50% com desconto 0.50 e 50% com desconto 0.00;
+--   75% com votou TRUE;
+--   NIF sintético e único para permitir ligar vendas ao plano.
+CREATE TEMP TABLE _ticket_plan ON COMMIT DROP AS
+WITH dias AS (
+    SELECT
+        d::DATE AS data,
+        CASE
+            WHEN EXTRACT(ISODOW FROM d) IN (6, 7) THEN 4000
+            ELSE 1000
+        END AS n_bilhetes
+    FROM generate_series(
+        DATE '2026-01-01',
+        DATE '2026-06-11',
+        INTERVAL '1 day'
+    ) AS gs(d)
+),
+base AS (
+    SELECT
+        d.data,
+        d.n_bilhetes,
+        g.n AS bilhete_no_dia
+    FROM dias d
+    CROSS JOIN LATERAL generate_series(1, d.n_bilhetes) AS g(n)
+),
+numerada AS (
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY data, bilhete_no_dia) AS ticket_seq,
+        data,
+        n_bilhetes,
+        bilhete_no_dia
+    FROM base
+)
+SELECT
+    ticket_seq,
+    data,
+    n_bilhetes,
+    bilhete_no_dia,
+    data
+        + TIME '09:00'
+        + ((bilhete_no_dia % 10) * INTERVAL '1 hour')
+        + ((bilhete_no_dia % 60) * INTERVAL '1 minute') AS data_hora,
+    LPAD((100000000 + ticket_seq)::TEXT, 9, '0') AS nif_cliente,
+    CASE
+        WHEN bilhete_no_dia % 2 = 0 THEN 0.50::NUMERIC(4,2)
+        ELSE 0.00::NUMERIC(4,2)
+    END AS desconto,
+    (bilhete_no_dia % 4 <> 0) AS votou
+FROM numerada;
+
+-- Uma venda por bilhete. Isto simplifica a prova da RI-4:
+-- cada venda fica associada a um bilhete que terá acessos.
+INSERT INTO venda (data_hora, nif_cliente)
+SELECT data_hora, nif_cliente
+FROM _ticket_plan
+ORDER BY ticket_seq;
+
+INSERT INTO bilhete (desconto, votou, no_venda)
+SELECT
+    p.desconto,
+    p.votou,
+    v.no_venda
+FROM _ticket_plan p
+JOIN venda v
+  ON v.nif_cliente = p.nif_cliente
+ORDER BY p.ticket_seq;
+
+-- Tabela auxiliar de zonas numeradas.
+CREATE TEMP TABLE _zona_ord ON COMMIT DROP AS
+SELECT
+    id_zona,
+    ROW_NUMBER() OVER (ORDER BY id_zona) - 1 AS idx
+FROM zona
+ORDER BY id_zona;
+
+-- Todas as combinações de 3 ou mais zonas.
+CREATE TEMP TABLE _combo ON COMMIT DROP AS
+WITH n AS (
+    SELECT COUNT(*)::INTEGER AS n_zonas FROM _zona_ord
+),
+masks AS (
+    SELECT generate_series(1, (1 << n_zonas) - 1) AS mask
+    FROM n
+),
+validas AS (
+    SELECT m.mask
+    FROM masks m
+    JOIN _zona_ord z
+      ON (m.mask & (1 << z.idx)) <> 0
+    GROUP BY m.mask
+    HAVING COUNT(*) >= 3
+)
+SELECT
+    ROW_NUMBER() OVER (ORDER BY mask) AS combo_idx,
+    mask
+FROM validas;
+
+CREATE TEMP TABLE _combo_zona ON COMMIT DROP AS
+SELECT
+    c.combo_idx,
+    z.id_zona
+FROM _combo c
+JOIN _zona_ord z
+  ON (c.mask & (1 << z.idx)) <> 0;
+
+-- Acessos:
+--   pelo menos 2% dos bilhetes de cada dia têm acesso total;
+--   os restantes percorrem ciclicamente todas as combinações de 3+ zonas.
+INSERT INTO acesso (bid, id_zona)
+SELECT
+    b.bid,
+    z.id_zona
+FROM _ticket_plan p
+JOIN venda v
+  ON v.nif_cliente = p.nif_cliente
+JOIN bilhete b
+  ON b.no_venda = v.no_venda
+JOIN _zona_ord z
+  ON TRUE
+WHERE p.bilhete_no_dia <= CEIL(p.n_bilhetes * 0.02)
+
+UNION ALL
+
+SELECT
+    b.bid,
+    cz.id_zona
+FROM _ticket_plan p
+JOIN venda v
+  ON v.nif_cliente = p.nif_cliente
+JOIN bilhete b
+  ON b.no_venda = v.no_venda
+JOIN _combo c
+  ON c.combo_idx = 1 + ((p.ticket_seq - 1) % (SELECT COUNT(*) FROM _combo))
+JOIN _combo_zona cz
+  ON cz.combo_idx = c.combo_idx
+WHERE p.bilhete_no_dia > CEIL(p.n_bilhetes * 0.02);
+
+-- Atualização dos votos:
+--   soma global dos votos = número de bilhetes com votou TRUE;
+--   distribuição quase uniforme por recinto;
+--   cada recinto recebe muito mais do que 0.1% dos votos totais
+--   dado o volume mínimo de bilhetes exigido.
+WITH parametros AS (
+    SELECT COUNT(*)::INTEGER AS total_votos
+    FROM bilhete
+    WHERE votou
+),
+recintos AS (
+    SELECT
+        id_recinto,
+        ROW_NUMBER() OVER (ORDER BY id_recinto)::INTEGER AS rn,
+        COUNT(*) OVER ()::INTEGER AS n_recintos
+    FROM recinto
+),
+plano AS (
+    SELECT
+        r.id_recinto,
+        (p.total_votos / r.n_recintos)
+        + CASE
+            WHEN r.rn <= (p.total_votos % r.n_recintos) THEN 1
+            ELSE 0
+          END AS votos_calculados
+    FROM recintos r
+    CROSS JOIN parametros p
+)
+UPDATE recinto r
+SET votos = p.votos_calculados
+FROM plano p
+WHERE p.id_recinto = r.id_recinto;
+
+COMMIT;

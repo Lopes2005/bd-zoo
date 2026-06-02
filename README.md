@@ -16,7 +16,7 @@ Este repositório contém as soluções versionadas do grupo para o projeto de B
 | Exercício | Tema                               | Dependências                                                                                 | Responsável |
 | --------- | ---------------------------------- | -------------------------------------------------------------------------------------------- | ----------- |
 | 1         | Restrições de Integridade          | Base para o resto do projeto; deve estar estabilizado antes do preenchimento final dos dados | Lopes       |
-| 2         | Preenchimento da Base de Dados     | Depende das restrições do Exercício 1                                                        | Santiago    |
+| 2         | Preenchimento da Base de Dados     | Depende das restrições do Exercício 1                                                        | Lopes    |
 | 3         | Desenvolvimento da Aplicação Flask | Pode avançar em paralelo, mas necessita de dados para testes completos                       | Esteves     |
 | 4         | Engenharia de Dados                | Depende dos dados do Exercício 2                                                             | Santiago    |
 | 5         | Consultas Analíticas               | Depende dos dados e da engenharia de dados                                                   | Lopes     |
