@@ -1,83 +1,214 @@
 # Projeto BD Zoo
 
-Este repositório é a fonte de verdade do grupo para o projeto de Bases de Dados.
+Este repositório contém as soluções versionadas do grupo para o projeto de Bases de Dados.
 
-## Ideia principal
+## Objetivo
 
-Este repositório NÃO substitui o ambiente Docker da cadeira.
+Este repositório **não substitui** o ambiente Docker fornecido pela cadeira.
 
-- `zoo-project-git/` contém as soluções versionadas.
-- `app/` e `bdist-workspace/` locais servem para testar.
-- O notebook oficial é preenchido manualmente no fim.
+A separação de responsabilidades é a seguinte:
 
-## Estrutura
+* `zoo-project-git/` → código e soluções versionadas
+* `app/` e `bdist-workspace/` locais → ambiente de teste
+* `entrega-bd-02-GG.ipynb` → documento final de submissão
 
-app/                          Aplicação Flask
-sql/01_integridade/           RI-1 a RI-4
-sql/02_dados/                 Inserts de dados
-sql/03_engenharia_dados/      Vista materializada e rentabilidade
-sql/04_consultas/             Consultas analíticas
-sql/05_indices/               Índices e EXPLAIN ANALYZE
-tests/                        Testes SQL e app
-docs/                         Documentação auxiliar
-images/                       Imagens usadas no notebook
+---
 
-Regra importante
+## Estrutura do Repositório
 
-Não desenvolver diretamente no notebook.
+```text
+app/                     Aplicação Flask
+sql/01_integridade/      RI-1 a RI-4
+sql/02_dados/            Inserção de dados
+sql/03_engenharia_dados/ Engenharia de dados
+sql/04_consultas/        Consultas analíticas
+sql/05_indices/          Índices e otimização
 
-O notebook é apenas o documento final de submissão.
+tests/                   Testes SQL e aplicação
+docs/                    Documentação auxiliar
+images/                  Imagens utilizadas no notebook
+```
 
-As soluções devem ser escritas primeiro nos ficheiros .sql ou .py deste repositório.
+---
 
-Como testar SQL
+## Regra Principal
 
-Cada colega deve copiar os ficheiros SQL para o seu ambiente local:
+O notebook oficial **não é utilizado para desenvolvimento**.
 
+As soluções devem ser desenvolvidas primeiro nos ficheiros:
+
+* `.sql`
+* `.py`
+
+e apenas no final copiadas para o notebook de entrega.
+
+---
+
+## Como Testar SQL
+
+Copiar os ficheiros SQL deste repositório para o ambiente local:
+
+```text
 zoo-project-git/sql/
-→
-bdist-workspace/work/project/sql/
+```
 
-Depois, dentro do terminal do Jupyter/container:
+e testar no notebook ou no ambiente Docker da cadeira.
 
-psql postgresql://app:app@postgres/app -f /home/jovyan/work/project/sql/01_integridade/ri4.sql
-Como testar Flask
+Exemplo:
 
-Copiar:
+```sql
+-- conteúdo de sql/01_integridade/ri4.sql
+```
 
+copiado para a célula correspondente do notebook.
+
+---
+
+## Como Testar Flask
+
+Copiar a pasta:
+
+```text
 zoo-project-git/app/
-→
-LABS/app/
+```
 
-Depois correr o Docker normalmente e testar a aplicação em:
+para a pasta `app/` do ambiente local.
 
+Depois iniciar o Docker normalmente e aceder a:
+
+```text
 http://localhost:8080
-Como trabalhar com Git
+```
 
-Criar branch:
+---
 
-git checkout -b ri4
+## Workflow Git
 
-Fazer alterações.
+O grupo utiliza uma abordagem simples baseada apenas na branch principal (`main`).
 
-Commit:
+Não serão utilizadas branches de funcionalidade.
 
+### Antes de começar a trabalhar
+
+Atualizar o repositório:
+
+```bash
+git pull
+```
+
+### Depois de alterar ficheiros
+
+Verificar alterações:
+
+```bash
+git status
+```
+
+Adicionar alterações:
+
+```bash
 git add .
-git commit -m "Implement RI4"
+```
 
-Push:
+Criar commit:
 
+```bash
+git commit -m "Descrição da alteração"
+```
+
+Enviar para o repositório:
+
+```bash
 git push
-Entrega final
+```
+
+### Regra de coordenação
+
+Antes de editar um ficheiro, informar o grupo.
+
+Exemplos:
+
+```text
+Estou a trabalhar na RI4.
+Estou a trabalhar nas consultas.
+Estou a trabalhar na aplicação Flask.
+```
+
+Evitar que duas pessoas alterem simultaneamente o mesmo ficheiro.
+
+### Em caso de conflito
+
+Executar:
+
+```bash
+git pull
+```
+
+resolver manualmente o conflito,
+
+e depois:
+
+```bash
+git add .
+git commit -m "Resolve merge conflict"
+git push
+```
+
+### Objetivo
+
+O Git é utilizado principalmente para:
+
+* guardar histórico das soluções;
+* partilhar código entre elementos do grupo;
+* recuperar versões anteriores quando necessário.
+
+Não é necessário utilizar branches para este projeto.
+
+
+## Notebook
+
+O ficheiro:
+
+```text
+docs/notebook-map.md
+```
+
+indica a correspondência entre:
+
+```text
+célula do notebook
+↓
+ficheiro fonte do repositório
+```
+
+---
+
+## Entrega Final
 
 A entrega no Fénix deve conter apenas:
 
+```text
 entrega-bd-02-GG.zip
 ├── entrega-bd-02-GG.ipynb
 └── app/
+```
 
-O conteúdo do notebook é preenchido manualmente copiando as soluções dos ficheiros deste repositório.
-
-
+O conteúdo do notebook será preenchido manualmente a partir dos ficheiros deste repositório.
 
 ---
+
+## Fonte de Verdade
+
+Durante todo o projeto:
+
+```text
+Fonte de verdade:
+    zoo-project-git/
+
+Ambiente de teste:
+    app/
+    bdist-workspace/
+
+Documento final:
+    entrega-bd-02-GG.ipynb
+```
