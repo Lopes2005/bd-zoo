@@ -1,6 +1,47 @@
 # Projeto BD Zoo
 
+<p align="center">
+  <img src="images/zooPROJ.jpeg" alt="Zoo Project" width="800">
+</p>
+
+<p align="center">
+  Projeto de Bases de Dados — Zoo
+</p>
 Este repositório contém as soluções versionadas do grupo para o projeto de Bases de Dados.
+
+#Overview projecto
+
+## Distribuição de Trabalho
+
+| Exercício | Tema                               | Dependências                                                                                 | Responsável |
+| --------- | ---------------------------------- | -------------------------------------------------------------------------------------------- | ----------- |
+| 1         | Restrições de Integridade          | Base para o resto do projeto; deve estar estabilizado antes do preenchimento final dos dados | Lopes       |
+| 2         | Preenchimento da Base de Dados     | Depende das restrições do Exercício 1                                                        | Santiago    |
+| 3         | Desenvolvimento da Aplicação Flask | Pode avançar em paralelo, mas necessita de dados para testes completos                       | Esteves     |
+| 4         | Engenharia de Dados                | Depende dos dados do Exercício 2                                                             | Santiago    |
+| 5         | Consultas Analíticas               | Depende dos dados e da engenharia de dados                                                   | Lopes     |
+| 6         | Índices e Otimização               | Depende das consultas finais do Exercício 5                                                  | Lopes       |
+
+### Ordem Recomendada
+
+```text
+1 → Restrições de Integridade
+2 → Preenchimento da Base de Dados
+3 → Aplicação Flask
+4 → Engenharia de Dados
+5 → Consultas Analíticas
+6 → Índices e Otimização
+```
+
+### Notas
+
+* O Exercício 1 influencia diretamente o Exercício 2.
+* O Exercício 4 depende da existência dos dados gerados no Exercício 2.
+* O Exercício 5 utiliza os resultados produzidos no Exercício 4.
+* O Exercício 6 apenas deve ser iniciado quando as consultas do Exercício 5 estiverem finalizadas.
+* O Exercício 3 pode avançar em paralelo com os restantes, utilizando dados de teste provisórios.
+
+
 
 ## Objetivo
 
