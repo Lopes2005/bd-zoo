@@ -1,4 +1,4 @@
-# Flask Web app
+# Flask API app
 
 ## Docker Python Version
 
