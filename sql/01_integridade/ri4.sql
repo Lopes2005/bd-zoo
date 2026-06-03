@@ -24,7 +24,6 @@ $$ LANGUAGE plpgsql;
 
 
 
-%%sql zoo
 
 --Função de lock especializada para diferentes tipos de alterações
     -- A RI-4 é verificada no fim da transação, mas alterações concorrentes
@@ -91,7 +90,6 @@ $$ LANGUAGE plpgsql;
 
 
 
-%%sql zoo
 
 -- Triggers BEFORE, para bloquear a venda antes de alterar bilhetes ou acessos
 DROP TRIGGER IF EXISTS ri_4_lock_bilhete ON bilhete;
@@ -111,7 +109,6 @@ EXECUTE FUNCTION ri_4_lock_venda();
 
 
 
-%%sql zoo
 
 --Triggers que efectivamente impõem a RI-4 no fim da transação
 DROP TRIGGER IF EXISTS ri_4_venda ON venda;

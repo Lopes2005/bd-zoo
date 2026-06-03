@@ -30,7 +30,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-%%sql zoo 
     
     --Triggers
     
