@@ -1,5 +1,6 @@
 @app.route("/zona/<int:zona_id>/", methods=("GET",))
 def zona_index(zona_id):
+    """ Lista os nomes dos animais em cada um dos recintos de uma certa zona"""
     
     #pool.connection grupo de conexoes pre abertas para ser mais rápido
     with pool.connection() as conn:  #conn é a ligação à BD
