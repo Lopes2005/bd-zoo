@@ -1,3 +1,4 @@
+%%sql 
 -- Exercício 2.5 — Vendas, bilhetes, acessos e votos
 -- Este bloco usa uma única transação porque a RI-4 exige que venda,
 -- bilhete e acesso formem uma unidade lógica completa.
@@ -90,14 +91,14 @@ WITH n AS (
     SELECT COUNT(*)::INTEGER AS n_zonas FROM _zona_ord
 ),
 masks AS (
-    SELECT generate_series(1, (1 << n_zonas) - 1) AS mask
+    SELECT generate_series(1, (POWER(2, n_zonas)::INTEGER) - 1) AS mask
     FROM n
 ),
 validas AS (
     SELECT m.mask
     FROM masks m
     JOIN _zona_ord z
-      ON (m.mask & (1 << z.idx)) <> 0
+      ON (m.mask & (POWER(2, z.idx)::INTEGER)) <> 0
     GROUP BY m.mask
     HAVING COUNT(*) >= 3
 )
@@ -112,7 +113,7 @@ SELECT
     z.id_zona
 FROM _combo c
 JOIN _zona_ord z
-  ON (c.mask & (1 << z.idx)) <> 0;
+  ON (c.mask & (POWER(2, z.idx)::INTEGER)) <> 0;
 
 -- Acessos:
 --   pelo menos 2% dos bilhetes de cada dia têm acesso total;
