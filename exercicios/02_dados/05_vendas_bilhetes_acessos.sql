@@ -1,4 +1,4 @@
-%%sql 
+%%sql zoo
 -- Exercício 2.5 — Vendas, bilhetes, acessos e votos
 -- Este bloco usa uma única transação porque a RI-4 exige que venda,
 -- bilhete e acesso formem uma unidade lógica completa.
@@ -6,6 +6,14 @@
 -- que representam uma operação lógica devem ser envolvidas por BEGIN/COMMIT.
 
 BEGIN;
+
+-- --- OTIMIZAÇÃO (BULK LOAD) ---
+-- Desativar temporariamente os triggers de utilizador (mantendo as Foreign Keys)
+-- para evitar que as funções de verificação linha-a-linha sejam chamadas 1.3 milhões de vezes.
+ALTER TABLE acesso DISABLE TRIGGER USER;
+ALTER TABLE bilhete DISABLE TRIGGER USER;
+ALTER TABLE venda DISABLE TRIGGER USER;
+-- ------------------------------
 
 -- Plano determinístico de bilhetes:
 --   dias úteis: 1000 bilhetes;
@@ -141,8 +149,10 @@ JOIN venda v
   ON v.nif_cliente = p.nif_cliente
 JOIN bilhete b
   ON b.no_venda = v.no_venda
+-- OTIMIZAÇÃO: CROSS JOIN para calcular o total_combos apenas uma vez
+CROSS JOIN (SELECT COUNT(*) AS total_combos FROM _combo) tc 
 JOIN _combo c
-  ON c.combo_idx = 1 + ((p.ticket_seq - 1) % (SELECT COUNT(*) FROM _combo))
+  ON c.combo_idx = 1 + ((p.ticket_seq - 1) % tc.total_combos)
 JOIN _combo_zona cz
   ON cz.combo_idx = c.combo_idx
 WHERE p.bilhete_no_dia > CEIL(p.n_bilhetes * 0.02);
@@ -179,5 +189,29 @@ UPDATE recinto r
 SET votos = p.votos_calculados
 FROM plano p
 WHERE p.id_recinto = r.id_recinto;
+
+-- --- OTIMIZAÇÃO (BULK LOAD: FINALIZAÇÃO) ---
+-- Reativar os triggers de validação agora que a inserção massiva acabou
+ALTER TABLE venda ENABLE TRIGGER USER;
+ALTER TABLE bilhete ENABLE TRIGGER USER;
+ALTER TABLE acesso ENABLE TRIGGER USER;
+
+-- Validação global da RI-4 (executa apenas 1 vez para todo o lote em vez de por cada linha inserida)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM venda v
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM bilhete b
+            JOIN acesso a ON a.bid = b.bid
+            WHERE b.no_venda = v.no_venda
+        )
+    ) THEN
+        RAISE EXCEPTION 'RI-4 violada durante o preenchimento massivo: existe venda sem bilhete com acesso.';
+    END IF;
+END $$;
+-- ------------------------------------------
 
 COMMIT;
