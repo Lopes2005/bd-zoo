@@ -1,12 +1,13 @@
 %%sql
--- 1. Criação do índice recomendado para tornar a RI-4 instantânea
+-- Criação do índice recomendado para tornar a RI-4 "instantânea"
 CREATE INDEX IF NOT EXISTS idx_bilhete_no_venda ON bilhete(no_venda);
 
--- 2. Início da transação atómica
 BEGIN;
 
+ 
 CREATE TEMP TABLE _ticket_plan ON COMMIT DROP AS
-WITH dias AS (
+-- Gerar os dias entre 2026-01-01 e 2026-06-11,  1000 bilhetes para dias úteis e 4000 para fds
+WITH dias AS ( 
     SELECT
         d::DATE AS data,
         CASE
@@ -18,7 +19,7 @@ WITH dias AS (
         DATE '2026-06-11',
         INTERVAL '1 day'
     ) AS gs(d)
-),
+),--- Gerar os bilhetes para cada dia, numerando-os de 1 a n_bilhetes
 base AS (
     SELECT
         d.data,
@@ -26,7 +27,7 @@ base AS (
         g.n AS bilhete_no_dia
     FROM dias d
     CROSS JOIN LATERAL generate_series(1, d.n_bilhetes) AS g(n)
-),
+),--- Adicionar uma numeração global aos bilhetes, ordenada por data e número do bilhete no dia
 numerada AS (
     SELECT
         ROW_NUMBER() OVER (ORDER BY data, bilhete_no_dia) AS ticket_seq,
@@ -35,7 +36,7 @@ numerada AS (
         bilhete_no_dia
     FROM base
 )
-SELECT
+SELECT --- Gerar os dados finais para cada bilhete, incluindo data_hora, nif_cliente, desconto e voto
     ticket_seq,
     data,
     n_bilhetes,
@@ -52,11 +53,14 @@ SELECT
     (bilhete_no_dia % 4 <> 0) AS votou
 FROM numerada;
 
+-- Inserir os dados gerados nas tabelas venda e bilhete, garantindo que as relações entre elas sejam mantidas
 INSERT INTO venda (data_hora, nif_cliente)
 SELECT data_hora, nif_cliente
 FROM _ticket_plan
 ORDER BY ticket_seq;
 
+-- O número do bilhete (bid) é gerado automaticamente, 
+-- e o no_venda é associado com base na ordem de inserção
 INSERT INTO bilhete (desconto, votou, no_venda)
 SELECT
     p.desconto,
@@ -67,6 +71,8 @@ JOIN venda v
   ON v.nif_cliente = p.nif_cliente
 ORDER BY p.ticket_seq;
 
+-- Gerar os acessos para cada bilhete, garantindo que 2% dos bilhetes tenham acesso a todas as zonas 
+-- e os restantes sejam distribuídos de forma equilibrada pelos combos de zonas
 CREATE TEMP TABLE _zona_ord ON COMMIT DROP AS
 SELECT
     id_zona,
@@ -74,6 +80,8 @@ SELECT
 FROM zona
 ORDER BY id_zona;
 
+-- Gerar todas as combinações possíveis de zonas (exceto a combinação vazia) 
+-- e filtrar apenas as combinações válidas (com pelo menos 3 zonas)
 CREATE TEMP TABLE _combo ON COMMIT DROP AS
 WITH n AS (
     SELECT COUNT(*)::INTEGER AS n_zonas FROM _zona_ord
@@ -95,6 +103,8 @@ SELECT
     mask
 FROM validas;
 
+-- Criar uma tabela temporária para mapear cada combo de zonas às zonas correspondentes, 
+-- facilitando a atribuição de acessos
 CREATE TEMP TABLE _combo_zona ON COMMIT DROP AS
 SELECT
     c.combo_idx,
@@ -103,6 +113,7 @@ FROM _combo c
 JOIN _zona_ord z
   ON (c.mask & (POWER(2, z.idx)::INTEGER)) <> 0;
 
+-- Inserir os acessos para cada bilhete, garantindo que 2% dos bilhetes tenham acesso a todas as zonas
 INSERT INTO acesso (bid, id_zona)
 SELECT
     b.bid,
@@ -118,6 +129,8 @@ WHERE p.bilhete_no_dia <= CEIL(p.n_bilhetes * 0.02)
 
 UNION ALL
 
+-- Para os restantes bilhetes, atribuir acessos com base nos combos de zonas,
+--  garantindo uma distribuição equilibrada
 SELECT
     b.bid,
     cz.id_zona
@@ -133,6 +146,7 @@ JOIN _combo_zona cz
   ON cz.combo_idx = c.combo_idx
 WHERE p.bilhete_no_dia > CEIL(p.n_bilhetes * 0.02);
 
+-- Calcular o número de votos para cada recinto, distribuindo os votos de forma equilibrada entre os recintos
 WITH parametros AS (
     SELECT COUNT(*)::INTEGER AS total_votos
     FROM bilhete
@@ -163,10 +177,9 @@ WHERE p.id_recinto = r.id_recinto;
 
 
 -- Forçar o Postgres a ver o tamanho real das tabelas
--- Isto garante que o Query Planner USE O ÍNDICE nos triggers deferred do COMMIT!
+-- Isto garante que o Query Planner use o index nos triggers deferred 
 ANALYZE venda;
 ANALYZE bilhete;
 ANALYZE acesso;
-
 
 COMMIT;

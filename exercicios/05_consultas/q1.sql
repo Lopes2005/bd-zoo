@@ -7,7 +7,7 @@ WITH ranking_recintos AS (
         ROW_NUMBER() OVER (PARTITION BY id_zona ORDER BY rentabilidade DESC, id_recinto ASC) AS pos
     FROM recinto
 )
-SELECT 
+SELECT
     id_zona,
     id_recinto,
     rentabilidade
