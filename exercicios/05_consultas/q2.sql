@@ -1,6 +1,6 @@
 %%sql zoo
 WITH analise_por_zona AS (
-    -- 1. Agregar as receitas a partir da vista materializada
+    -- Agregar as receitas a partir da vista materializada
     SELECT 
         id_zona,
         SUM(receita) AS receita_zona
@@ -8,7 +8,7 @@ WITH analise_por_zona AS (
     GROUP BY id_zona
 ),
 dados_consolidados AS (
-    -- 2. Cruzar com a tabela zona e injetar a tua regra do Exercício 2.1 (África)
+    -- Cruzar com a tabela zona e injetar a tua regra do Exercício 2.1 (África)
     SELECT 
         z.id_zona,
         -- Aplica a lógica: se for África, é da especialidade!
@@ -24,7 +24,7 @@ dados_consolidados AS (
     FROM zona z
     LEFT JOIN analise_por_zona az ON z.id_zona = az.id_zona
 )
--- 3. Gerar a tabela analítica final com médias e o operador CUBE
+-- Gerar a tabela analítica final com médias e o operador CUBE
 SELECT 
     CASE 
         WHEN da_especialidade IS TRUE THEN 'Zonas da Especialidade (África)'

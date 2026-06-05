@@ -205,7 +205,7 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION ri_4_verifica_venda();
 
--- IMPORTANTE: inclui INSERT em bilhete.
+-- Inclui INSERT em bilhete.
 -- Sem isto, seria possível adicionar um bilhete sem acesso a uma venda já válida.
 CREATE CONSTRAINT TRIGGER ri_4_bilhete
 AFTER INSERT OR UPDATE OR DELETE ON bilhete
