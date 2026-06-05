@@ -17,7 +17,6 @@ ORDER BY id_zona;
 
 
 
-
 CREATE INDEX IF NOT EXISTS idx_recinto_zona_rentabilidade
 ON recinto (id_zona, rentabilidade DESC);
 
