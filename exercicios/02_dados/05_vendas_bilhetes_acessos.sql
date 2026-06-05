@@ -1,30 +1,26 @@
 %%sql zoo
--- Exercício 2.5 — Vendas, bilhetes, acessos e votos
--- Este bloco usa uma única transação porque a RI-4 exige que venda,
--- bilhete e acesso formem uma unidade lógica completa.
--- A aula de transações justifica este padrão: várias instruções SQL
--- que representam uma operação lógica devem ser envolvidas por BEGIN/COMMIT.
+-- Garante que não há transações presas de execuções anteriores
+ROLLBACK;
+
+-- Limpa o lixo das tentativas anteriores para não duplicar dados
+TRUNCATE TABLE acesso, bilhete, venda RESTART IDENTITY CASCADE;
+
+-- [A TUA IDEIA]: Criar o índice para acelerar drasticamente os JOINs por no_venda
+CREATE INDEX IF NOT EXISTS idx_bilhete_no_venda ON bilhete(no_venda);
 
 BEGIN;
 
--- --- OTIMIZAÇÃO (BULK LOAD) ---
--- Desativar temporariamente os triggers de utilizador (mantendo as Foreign Keys)
--- para evitar que as funções de verificação linha-a-linha sejam chamadas 1.3 milhões de vezes.
+-- 1. Desativar temporariamente os triggers de utilizador para Bulk Load
 ALTER TABLE acesso DISABLE TRIGGER USER;
 ALTER TABLE bilhete DISABLE TRIGGER USER;
 ALTER TABLE venda DISABLE TRIGGER USER;
--- ------------------------------
 
--- Plano determinístico de bilhetes:
---   dias úteis: 1000 bilhetes;
---   fins de semana: 4000 bilhetes;
---   50% com desconto 0.50 e 50% com desconto 0.00;
---   75% com votou TRUE;
---   NIF sintético e único para permitir ligar vendas ao plano.
+-- 2. Criar plano determinístico de bilhetes (Substituído % por MOD)
+DROP TABLE IF EXISTS _ticket_plan CASCADE;
 CREATE TEMP TABLE _ticket_plan ON COMMIT DROP AS
 WITH dias AS (
     SELECT
-        d::DATE AS data,
+        CAST(d AS DATE) AS data,
         CASE
             WHEN EXTRACT(ISODOW FROM d) IN (6, 7) THEN 4000
             ELSE 1000
@@ -58,34 +54,34 @@ SELECT
     bilhete_no_dia,
     data
         + TIME '09:00'
-        + ((bilhete_no_dia % 10) * INTERVAL '1 hour')
-        + ((bilhete_no_dia % 60) * INTERVAL '1 minute') AS data_hora,
-    LPAD((100000000 + ticket_seq)::TEXT, 9, '0') AS nif_cliente,
-    CASE
-        WHEN bilhete_no_dia % 2 = 0 THEN 0.50::NUMERIC(4,2)
-        ELSE 0.00::NUMERIC(4,2)
-    END AS desconto,
-    (bilhete_no_dia % 4 <> 0) AS votou
+        + (MOD(bilhete_no_dia, 10) * INTERVAL '1 hour')
+        + (MOD(bilhete_no_dia, 60) * INTERVAL '1 minute') AS data_hora,
+    LPAD(CAST(100000000 + ticket_seq AS TEXT), 9, '0') AS nif_cliente,
+    CAST(CASE
+        WHEN MOD(bilhete_no_dia, 2) = 0 THEN 0.50
+        ELSE 0.00
+    END AS NUMERIC(4,2)) AS desconto,
+    (MOD(bilhete_no_dia, 4) <> 0) AS votou
 FROM numerada;
 
--- Uma venda por bilhete. Isto simplifica a prova da RI-4:
--- cada venda fica associada a um bilhete que terá acessos.
+-- 3. Inserir as Vendas
 INSERT INTO venda (data_hora, nif_cliente)
 SELECT data_hora, nif_cliente
 FROM _ticket_plan
 ORDER BY ticket_seq;
 
+-- 4. Inserir os Bilhetes (Beneficia imediatamente do índice)
 INSERT INTO bilhete (desconto, votou, no_venda)
 SELECT
     p.desconto,
     p.votou,
     v.no_venda
 FROM _ticket_plan p
-JOIN venda v
-  ON v.nif_cliente = p.nif_cliente
+JOIN venda v ON v.nif_cliente = p.nif_cliente
 ORDER BY p.ticket_seq;
 
--- Tabela auxiliar de zonas numeradas.
+-- 5. Tabela auxiliar de zonas numeradas
+DROP TABLE IF EXISTS _zona_ord CASCADE;
 CREATE TEMP TABLE _zona_ord ON COMMIT DROP AS
 SELECT
     id_zona,
@@ -93,20 +89,20 @@ SELECT
 FROM zona
 ORDER BY id_zona;
 
--- Todas as combinações de 3 ou mais zonas.
+-- 6. Gerar todas as combinações de 3 ou mais zonas
+DROP TABLE IF EXISTS _combo CASCADE;
 CREATE TEMP TABLE _combo ON COMMIT DROP AS
 WITH n AS (
-    SELECT COUNT(*)::INTEGER AS n_zonas FROM _zona_ord
+    SELECT CAST(COUNT(*) AS INTEGER) AS n_zonas FROM _zona_ord
 ),
 masks AS (
-    SELECT generate_series(1, (POWER(2, n_zonas)::INTEGER) - 1) AS mask
+    SELECT generate_series(1, CAST(POWER(2, n.n_zonas) AS INTEGER) - 1) AS mask
     FROM n
 ),
 validas AS (
     SELECT m.mask
     FROM masks m
-    JOIN _zona_ord z
-      ON (m.mask & (POWER(2, z.idx)::INTEGER)) <> 0
+    JOIN _zona_ord z ON (m.mask & CAST(POWER(2, z.idx) AS INTEGER)) <> 0
     GROUP BY m.mask
     HAVING COUNT(*) >= 3
 )
@@ -115,28 +111,24 @@ SELECT
     mask
 FROM validas;
 
+-- 7. Mapear os combos para as respetivas zonas
+DROP TABLE IF EXISTS _combo_zona CASCADE;
 CREATE TEMP TABLE _combo_zona ON COMMIT DROP AS
 SELECT
     c.combo_idx,
     z.id_zona
 FROM _combo c
-JOIN _zona_ord z
-  ON (c.mask & (POWER(2, z.idx)::INTEGER)) <> 0;
+JOIN _zona_ord z ON (c.mask & CAST(POWER(2, z.idx) AS INTEGER)) <> 0;
 
--- Acessos:
---   pelo menos 2% dos bilhetes de cada dia têm acesso total;
---   os restantes percorrem ciclicamente todas as combinações de 3+ zonas.
+-- 8. Inserir os Acessos (Substituído % por MOD)
 INSERT INTO acesso (bid, id_zona)
 SELECT
     b.bid,
     z.id_zona
 FROM _ticket_plan p
-JOIN venda v
-  ON v.nif_cliente = p.nif_cliente
-JOIN bilhete b
-  ON b.no_venda = v.no_venda
-JOIN _zona_ord z
-  ON TRUE
+JOIN venda v ON v.nif_cliente = p.nif_cliente
+JOIN bilhete b ON b.no_venda = v.no_venda
+JOIN _zona_ord z ON TRUE
 WHERE p.bilhete_no_dia <= CEIL(p.n_bilhetes * 0.02)
 
 UNION ALL
@@ -145,33 +137,24 @@ SELECT
     b.bid,
     cz.id_zona
 FROM _ticket_plan p
-JOIN venda v
-  ON v.nif_cliente = p.nif_cliente
-JOIN bilhete b
-  ON b.no_venda = v.no_venda
--- OTIMIZAÇÃO: CROSS JOIN para calcular o total_combos apenas uma vez
+JOIN venda v ON v.nif_cliente = p.nif_cliente
+JOIN bilhete b ON b.no_venda = v.no_venda
 CROSS JOIN (SELECT COUNT(*) AS total_combos FROM _combo) tc 
-JOIN _combo c
-  ON c.combo_idx = 1 + ((p.ticket_seq - 1) % tc.total_combos)
-JOIN _combo_zona cz
-  ON cz.combo_idx = c.combo_idx
+JOIN _combo c ON c.combo_idx = 1 + (MOD(CAST(p.ticket_seq - 1 AS INTEGER), CAST(tc.total_combos AS INTEGER)))
+JOIN _combo_zona cz ON cz.combo_idx = c.combo_idx
 WHERE p.bilhete_no_dia > CEIL(p.n_bilhetes * 0.02);
 
--- Atualização dos votos:
---   soma global dos votos = número de bilhetes com votou TRUE;
---   distribuição quase uniforme por recinto;
---   cada recinto recebe muito mais do que 0.1% dos votos totais
---   dado o volume mínimo de bilhetes exigido.
+-- 9. Atualizar os votos (Substituído % por MOD)
 WITH parametros AS (
-    SELECT COUNT(*)::INTEGER AS total_votos
+    SELECT CAST(COUNT(*) AS INTEGER) AS total_votos
     FROM bilhete
     WHERE votou
 ),
 recintos AS (
     SELECT
         id_recinto,
-        ROW_NUMBER() OVER (ORDER BY id_recinto)::INTEGER AS rn,
-        COUNT(*) OVER ()::INTEGER AS n_recintos
+        CAST(ROW_NUMBER() OVER (ORDER BY id_recinto) AS INTEGER) AS rn,
+        CAST(COUNT(*) OVER () AS INTEGER) AS n_recintos
     FROM recinto
 ),
 plano AS (
@@ -179,7 +162,7 @@ plano AS (
         r.id_recinto,
         (p.total_votos / r.n_recintos)
         + CASE
-            WHEN r.rn <= (p.total_votos % r.n_recintos) THEN 1
+            WHEN r.rn <= MOD(p.total_votos, r.n_recintos) THEN 1
             ELSE 0
           END AS votos_calculados
     FROM recintos r
@@ -190,13 +173,12 @@ SET votos = p.votos_calculados
 FROM plano p
 WHERE p.id_recinto = r.id_recinto;
 
--- --- OTIMIZAÇÃO (BULK LOAD: FINALIZAÇÃO) ---
--- Reativar os triggers de validação agora que a inserção massiva acabou
+-- 10. Reativar os triggers de validação
 ALTER TABLE venda ENABLE TRIGGER USER;
 ALTER TABLE bilhete ENABLE TRIGGER USER;
 ALTER TABLE acesso ENABLE TRIGGER USER;
 
--- Validação global da RI-4 (executa apenas 1 vez para todo o lote em vez de por cada linha inserida)
+-- 11. Validação global da RI-4
 DO $$
 BEGIN
     IF EXISTS (
@@ -209,9 +191,8 @@ BEGIN
             WHERE b.no_venda = v.no_venda
         )
     ) THEN
-        RAISE EXCEPTION 'RI-4 violada durante o preenchimento massivo: existe venda sem bilhete com acesso.';
+        RAISE EXCEPTION 'RI-4 violada durante o preenchimento massivo.';
     END IF;
 END $$;
--- ------------------------------------------
 
 COMMIT;
