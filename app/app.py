@@ -59,7 +59,6 @@ pool = ConnectionPool(
     timeout=5,
 )
 
-
 @app.route("/ping", methods=("GET",))
 @limiter.exempt
 def ping():
