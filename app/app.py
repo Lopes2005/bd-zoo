@@ -60,158 +60,6 @@ pool = ConnectionPool(
 )
 
 
-def is_decimal(s):
-    """Returns True if string is a parseable float number."""
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
-
-
-@app.route("/", methods=("GET",))
-@app.route("/accounts", methods=("GET",))
-@limiter.limit("1 per second")
-def account_index():
-    """Show all the accounts, most recent first."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            accounts = cur.execute(
-                """
-                SELECT account_number, branch_name, balance
-                FROM account
-                ORDER BY account_number DESC;
-                """,
-                {},
-            ).fetchall()
-            log.debug(f"Found {cur.rowcount} rows.")
-
-    return jsonify(accounts), 200
-
-
-@app.route("/accounts/<account_number>/update", methods=("GET",))
-@limiter.limit("1 per second")
-def account_update_view(account_number):
-    """Show the page to update the account balance."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            account = cur.execute(
-                """
-                SELECT account_number, branch_name, balance
-                FROM account
-                WHERE account_number = %(account_number)s;
-                """,
-                {"account_number": account_number},
-            ).fetchone()
-            log.debug(f"Found {cur.rowcount} rows.")
-
-    # At the end of the `connection()` context, the transaction is committed
-    # or rolled back, and the connection returned to the pool.
-
-    if account is None:
-        return jsonify({"message": "Account not found.", "status": "error"}), 404
-
-    return jsonify(account), 200
-
-
-@app.route(
-    "/accounts/<account_number>/update",
-    methods=(
-        "PUT",
-        "POST",
-    ),
-)
-def account_update_save(account_number):
-    """Update the account balance."""
-
-    balance = request.args.get("balance")
-
-    error = None
-
-    if not balance:
-        error = "Balance is required."
-    if not is_decimal(balance):
-        error = "Balance is required to be decimal."
-
-    if error is not None:
-        return jsonify({"message": error, "status": "error"}), 400
-    else:
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE account
-                    SET balance = %(balance)s
-                    WHERE account_number = %(account_number)s;
-                    """,
-                    {"account_number": account_number, "balance": balance},
-                )
-                # The result of this statement is persisted immediately by the database
-                # because the connection is in autocommit mode.
-                log.debug(f"Updated {cur.rowcount} rows.")
-
-                if cur.rowcount == 0:
-                    return (
-                        jsonify({"message": "Account not found.", "status": "error"}),
-                        404,
-                    )
-
-        # The connection is returned to the pool at the end of the `connection()` context but,
-        # because it is not in a transaction state, no COMMIT is executed.
-
-        return "", 204
-
-
-@app.route(
-    "/accounts/<account_number>/delete",
-    methods=(
-        "DELETE",
-        "POST",
-    ),
-)
-def account_delete(account_number):
-    """Delete the account."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                with conn.transaction():
-                    # BEGIN is executed, a transaction started
-                    cur.execute(
-                        """
-                        DELETE FROM depositor
-                        WHERE account_number = %(account_number)s;
-                        """,
-                        {"account_number": account_number},
-                    )
-                    cur.execute(
-                        """
-                        DELETE FROM account
-                        WHERE account_number = %(account_number)s;
-                        """,
-                        {"account_number": account_number},
-                    )
-                    # These two operations run atomically in the same transaction
-            except Exception as e:
-                return jsonify({"message": str(e), "status": "error"}), 500
-            else:
-                # COMMIT is executed at the end of the block.
-                # The connection is in idle state again.
-                log.debug(f"Deleted {cur.rowcount} rows.")
-
-                if cur.rowcount == 0:
-                    return (
-                        jsonify({"message": "Account not found.", "status": "error"}),
-                        404,
-                    )
-
-    # The connection is returned to the pool at the end of the `connection()` context
-
-    return "", 204
-
-
 @app.route("/ping", methods=("GET",))
 @limiter.exempt
 def ping():
@@ -219,12 +67,8 @@ def ping():
     return jsonify({"message": "pong!", "status": "success"})
 
 
-if __name__ == "__main__":
-    app.run()
 
-
-
-###---FUNÇÔES PARA O PROJETO---###
+###---FUNÇÔES PARA O PROJETO ZOO---###
 
 #DESENVOLVIMENTO DA APLICAÇÃO
 
@@ -438,3 +282,7 @@ def venda_save():
                     "bilhetes": resposta_bilhetes,
                     "status": "success"
                 }), 201
+
+
+if __name__ == "__main__":
+    app.run()
