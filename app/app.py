@@ -7,7 +7,7 @@ from logging.config import dictConfig
 from flask import Flask, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from psycopg.rows import namedtuple_row
+from psycopg.rows import namedtuple_row, dict_row
 from psycopg_pool import ConnectionPool
 
 dictConfig(
@@ -77,7 +77,7 @@ def zona_index(zona_id):
     
     # pool.connection grupo de conexões pré-abertas para ser mais rápido
     with pool.connection() as conn:  # conn é a ligação à BD
-        with conn.cursor() as cur:   # cur (cursor) leva a query SQL até à BD
+        with conn.cursor(row_factory = dict_row) as cur:   # cur (cursor) leva a query SQL até à BD
             # Executar a query, passando o dic com a zona_id real
             cur.execute(
                 """
